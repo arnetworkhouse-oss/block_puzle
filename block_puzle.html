@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Block Puzzle</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface2: #1c2128;
+            --cell-empty: #1e2530;
+            --cell-border: rgba(255,255,255,0.06);
+            --gold: #f5c542;
+            --accent: #58a6ff;
+            --accent2: #3fb950;
+            --text: #e6edf3;
+            --text-muted: #7d8590;
+            --glow: rgba(88,166,255,0.35);
+        }
+
+        * { touch-action: none; box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            min-height: 100dvh; overflow: hidden;
+            user-select: none;
+        }
+
+        /* ── LOADER ── */
+        #loader-screen {
+            position: fixed; inset: 0;
+            background: var(--bg);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            gap: 28px; z-index: 2000;
+        }
+
+        .logo-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+        .logo-icon {
+            display: grid; grid-template-columns: repeat(3, 18px); grid-template-rows: repeat(3, 18px);
+            gap: 4px; margin-bottom: 4px;
+        }
+        .logo-block { border-radius: 4px; }
+        .logo-block.a { background: #58a6ff; }
+        .logo-block.b { background: #3fb950; }
+        .logo-block.c { background: #f5c542; }
+        .logo-block.d { background: #ff6b6b; }
+        .logo-block.e { background: #bf91f3; }
+        .logo-block.f { background: transparent; }
+
+        .glossy-title {
+            font-size: clamp(1.8rem, 8vw, 2.6rem);
+            font-weight: 800;
+            letter-spacing: 3px;
+            background: linear-gradient(90deg, #fff 0%, var(--accent) 50%, #fff 100%);
+            background-size: 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 2.5s linear infinite;
+        }
+        @keyframes shine { to { background-position: 200%; } }
+
+        .progress-wrap { width: 220px; text-align: center; display: flex; flex-direction: column; gap: 8px; }
+        .loader-pct { font-size: 0.9rem; font-weight: 600; color: var(--accent); letter-spacing: 1px; }
+        .progress-track {
+            width: 100%; height: 6px;
+            background: var(--surface2); border-radius: 99px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            width: 0%; height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--accent2));
+            border-radius: 99px;
+            transition: width 0.05s linear;
+        }
+        .made-by { color: var(--text-muted); font-size: 0.78rem; letter-spacing: 1.5px; font-weight: 500; }
+
+        /* ── GAME ── */
+        #game-container { display: none; width: 92%; max-width: 400px; }
+
+        /* Header */
+        .game-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 16px; padding: 0 4px;
+        }
+        .score-card {
+            background: var(--surface);
+            border: 1px solid var(--cell-border);
+            border-radius: 12px;
+            padding: 8px 18px;
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+        }
+        .score-label { font-size: 0.65rem; font-weight: 700; letter-spacing: 2px; color: var(--text-muted); text-transform: uppercase; }
+        .score-value { font-size: 1.5rem; font-weight: 800; color: var(--gold); line-height: 1; }
+
+        .best-card {
+            background: var(--surface);
+            border: 1px solid var(--cell-border);
+            border-radius: 12px;
+            padding: 8px 18px;
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+        }
+
+        /* Grid */
+        #grid-wrap { position: relative; width: 100%; }
+
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            aspect-ratio: 1;
+            gap: 3px;
+            background: var(--surface);
+            padding: 8px;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.07);
+            box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+            position: relative;
+            width: 100%;
+        }
+
+        .cell {
+            background: var(--cell-empty);
+            border-radius: 4px;
+            transition: background 0.1s;
+            position: relative;
+        }
+        .cell.filled { }
+        .cell.preview {
+            background: rgba(88,166,255,0.30) !important;
+            outline: 1.5px solid rgba(88,166,255,0.6);
+        }
+        .cell.invalid-preview {
+            background: rgba(255,80,80,0.25) !important;
+            outline: 1.5px solid rgba(255,80,80,0.5);
+        }
+        .cell.clear-anim {
+            animation: clearFlash 0.45s ease forwards;
+        }
+        @keyframes clearFlash {
+            0%   { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+            60%  { background: #fff8c5; box-shadow: 0 0 20px #fff8c5; }
+            100% { background: var(--cell-empty); box-shadow: none; }
+        }
+
+        /* Pieces */
+        #pieces-container {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            height: 100px;
+            background: var(--surface);
+            border-radius: 14px;
+            border: 1px solid var(--cell-border);
+            padding: 10px;
+        }
+
+        .piece-slot {
+            flex: 1;
+            display: flex; align-items: center; justify-content: center;
+            height: 100%;
+        }
+
+        .piece {
+            display: grid;
+            gap: 3px;
+            cursor: grab;
+            transition: transform 0.15s, opacity 0.15s;
+        }
+        .piece:active { cursor: grabbing; }
+        .piece.used { opacity: 0; pointer-events: none; }
+
+        .block {
+            width: 22px; height: 22px;
+            border-radius: 4px;
+            pointer-events: none;
+            box-shadow: inset 0 -2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+        }
+
+        /* Drag proxy */
+        #drag-proxy {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1500;
+            display: none;
+            opacity: 0.88;
+            filter: drop-shadow(0 6px 18px rgba(0,0,0,0.5));
+        }
+        #drag-proxy .block {
+            width: 26px; height: 26px;
+        }
+
+        /* Landing shadow — fixed position under proxy, lower z */
+        #drop-shadow {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1400;
+            display: none;
+            opacity: 0.35;
+            filter: blur(2px);
+        }
+        #drop-shadow .block {
+            width: 26px; height: 26px;
+            border-radius: 4px;
+        }
+
+        /* Game over */
+        #game-over-overlay {
+            position: absolute; inset: 0;
+            background: rgba(10,14,20,0.97);
+            display: none;
+            flex-direction: column;
+            justify-content: center; align-items: center;
+            border-radius: 16px; z-index: 100;
+            gap: 8px;
+        }
+        .go-title { font-size: 1.6rem; font-weight: 800; color: #ff5f5f; letter-spacing: 2px; }
+        .go-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 2px; color: var(--text-muted); text-transform: uppercase; margin-top: 8px; }
+        .go-score { font-size: 3.2rem; font-weight: 900; color: var(--gold); line-height: 1; }
+
+        .retry-btn {
+            margin-top: 16px;
+            background: linear-gradient(135deg, var(--accent), #3a86ff);
+            border: none; padding: 11px 32px;
+            color: white; font-weight: 700; font-size: 0.95rem;
+            letter-spacing: 1px; border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(88,166,255,0.35);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .retry-btn:active { transform: scale(0.96); }
+    </style>
+</head>
+<body>
+
+<div id="loader-screen">
+    <div class="logo-wrap">
+        <div class="logo-icon">
+            <div class="logo-block a"></div>
+            <div class="logo-block a"></div>
+            <div class="logo-block f"></div>
+            <div class="logo-block b"></div>
+            <div class="logo-block c"></div>
+            <div class="logo-block d"></div>
+            <div class="logo-block f"></div>
+            <div class="logo-block e"></div>
+            <div class="logo-block e"></div>
+        </div>
+        <div class="glossy-title">BLOCK PUZZLE</div>
+    </div>
+    <div class="progress-wrap">
+        <div class="loader-pct" id="load-val">0%</div>
+        <div class="progress-track"><div class="progress-fill" id="load-bar"></div></div>
+    </div>
+    <div class="made-by">MADE BY AR NETWORK HOUSE</div>
+</div>
+
+<div id="game-container">
+    <div class="game-header">
+        <div class="score-card">
+            <span class="score-label">Score</span>
+            <span class="score-value" id="score-val">0</span>
+        </div>
+        <div class="best-card">
+            <span class="score-label">Best</span>
+            <span class="score-value" id="best-val">0</span>
+        </div>
+    </div>
+    <div id="grid-wrap">
+        <div id="grid">
+            <div id="game-over-overlay">
+                <div class="go-title">GAME OVER</div>
+                <div class="go-label">Final Score</div>
+                <div class="go-score" id="final-score">0</div>
+                <button class="retry-btn" onclick="retryGame()">TRY AGAIN</button>
+            </div>
+        </div>
+    </div>
+    <div id="pieces-container"></div>
+</div>
+
+<div id="drag-proxy"></div>
+<div id="drop-shadow"></div>
+
+<script>
+    const gridEl = document.getElementById('grid');
+    const piecesEl = document.getElementById('pieces-container');
+    const scoreEl = document.getElementById('score-val');
+    const bestEl = document.getElementById('best-val');
+    const dragProxy = document.getElementById('drag-proxy');
+    const dropShadow = document.getElementById('drop-shadow');
+    const loadBar = document.getElementById('load-bar');
+    const loadText = document.getElementById('load-val');
+
+    const SIZE = 8;
+    let score = 0, bestScore = parseInt(localStorage.getItem('bpBest') || '0');
+    let board = [];
+    let activePiece = null;
+    let cellSize = 0; // computed cell pixel size on grid
+
+    bestEl.innerText = bestScore;
+
+    const SHAPES = [
+        [[0,0],[0,1],[1,0],[1,1]],       // 2x2
+        [[0,0],[0,1],[0,2]],             // 1x3 H
+        [[0,0],[1,0],[2,0]],             // 3x1 V
+        [[0,0],[0,1],[1,1]],             // L small
+        [[0,0],[1,0],[1,1]],             // J small
+        [[0,0],[0,1],[0,2],[0,3]],       // 1x4 H
+        [[0,0],[1,0],[2,0],[3,0]],       // 4x1 V
+        [[0,0],[0,1],[0,2],[1,0]],       // L big
+        [[0,0],[0,1],[0,2],[1,2]],       // J big
+        [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]], // 2x3
+        [[0,0],[1,0]],                   // 2x1 V
+        [[0,0],[0,1]],                   // 1x2 H
+        [[0,0]],                         // 1x1
+        [[0,0],[0,1],[0,2],[1,1]],       // T
+        [[0,1],[1,0],[1,1],[1,2]],       // T upside
+    ];
+
+    const COLORS = [
+        { fill: '#58a6ff', shadow: '#1e4a7a' },
+        { fill: '#3fb950', shadow: '#1a4f22' },
+        { fill: '#f5c542', shadow: '#7a5e10' },
+        { fill: '#ff6b6b', shadow: '#7a2828' },
+        { fill: '#bf91f3', shadow: '#5a3c7a' },
+        { fill: '#ff9f43', shadow: '#7a4510' },
+    ];
+
+    // ── LOADER ──
+    let pct = 0;
+    const iv = setInterval(() => {
+        pct += 100 / (5000 / 50);
+        if (pct >= 100) {
+            pct = 100; clearInterval(iv);
+            setTimeout(() => {
+                document.getElementById('loader-screen').style.display = 'none';
+                document.getElementById('game-container').style.display = 'block';
+                init();
+            }, 400);
+        }
+        loadBar.style.width = pct + '%';
+        loadText.innerText = Math.floor(pct) + '%';
+    }, 50);
+
+    // ── INIT ──
+    function init() {
+        board = Array(SIZE).fill(null).map(() => Array(SIZE).fill(0));
+        score = 0; updateScore();
+        document.getElementById('game-over-overlay').style.display = 'none';
+        buildGrid();
+        spawnPieces();
+        computeCellSize();
+    }
+
+    function computeCellSize() {
+        const cells = gridEl.querySelectorAll('.cell');
+        if (cells.length) {
+            const r = cells[0].getBoundingClientRect();
+            cellSize = r.width;
+        }
+    }
+
+    function buildGrid() {
+        const overlay = document.getElementById('game-over-overlay');
+        gridEl.innerHTML = ''; gridEl.appendChild(overlay);
+        for (let i = 0; i < SIZE * SIZE; i++) {
+            const c = document.createElement('div');
+            c.classList.add('cell');
+            gridEl.appendChild(c);
+        }
+    }
+
+    function updateScore() {
+        scoreEl.innerText = score;
+        if (score > bestScore) { bestScore = score; bestEl.innerText = bestScore; localStorage.setItem('bpBest', bestScore); }
+    }
+
+    // ── SPAWN ──
+    function spawnPieces() {
+        piecesEl.innerHTML = '';
+        for (let i = 0; i < 3; i++) {
+            const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+            const col = COLORS[Math.floor(Math.random() * COLORS.length)];
+            const slot = document.createElement('div');
+            slot.classList.add('piece-slot');
+            slot.appendChild(makePiece(shape, col));
+            piecesEl.appendChild(slot);
+        }
+        if (!canAnyMove()) triggerGameOver();
+    }
+
+    function makePiece(shape, col) {
+        const wrap = document.createElement('div');
+        wrap.classList.add('piece');
+        wrap.dataset.shape = JSON.stringify(shape);
+        wrap.dataset.fill = col.fill;
+        wrap.dataset.shadow = col.shadow;
+
+        const rows = Math.max(...shape.map(p => p[0])) + 1;
+        const cols = Math.max(...shape.map(p => p[1])) + 1;
+        wrap.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+        wrap.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+
+        shape.forEach(([r, c]) => {
+            const b = document.createElement('div');
+            b.classList.add('block');
+            b.style.backgroundColor = col.fill;
+            b.style.gridRowStart = r + 1;
+            b.style.gridColumnStart = c + 1;
+            wrap.appendChild(b);
+        });
+
+        wrap.addEventListener('mousedown', e => startDrag(e, wrap, shape, col));
+        wrap.addEventListener('touchstart', e => startDrag(e, wrap, shape, col), { passive: false });
+        return wrap;
+    }
+
+    // ── DRAG START ──
+    function startDrag(e, wrap, shape, col) {
+        e.preventDefault();
+        computeCellSize();
+        const pos = e.touches ? e.touches[0] : e;
+
+        activePiece = { shape, col, element: wrap };
+
+        // Build proxy
+        const rows = Math.max(...shape.map(p => p[0])) + 1;
+        const cols = Math.max(...shape.map(p => p[1])) + 1;
+        dragProxy.innerHTML = wrap.innerHTML;
+        dragProxy.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+        dragProxy.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        dragProxy.style.display = 'grid';
+        dragProxy.style.gap = '3px';
+
+        // Build drop shadow (darker blocks, blurred)
+        dropShadow.innerHTML = wrap.innerHTML;
+        dropShadow.style.gridTemplateRows = dragProxy.style.gridTemplateRows;
+        dropShadow.style.gridTemplateColumns = dragProxy.style.gridTemplateColumns;
+        dropShadow.style.gap = '3px';
+        dropShadow.querySelectorAll('.block').forEach(b => b.style.backgroundColor = col.shadow);
+
+        wrap.style.opacity = '0.25';
+        positionProxy(pos.clientX, pos.clientY);
+    }
+
+    // ── PROXY POSITION ──
+    // Offset: on touch, lift piece above finger; on mouse, center on cursor
+    function proxyOffset(isTouch, blockSize) {
+        const pieceRows = activePiece ? Math.max(...activePiece.shape.map(p => p[0])) + 1 : 1;
+        const pieceCols = activePiece ? Math.max(...activePiece.shape.map(p => p[1])) + 1 : 1;
+        const h = pieceRows * blockSize + (pieceRows - 1) * 3;
+        const w = pieceCols * blockSize + (pieceCols - 1) * 3;
+        const ox = w / 2;
+        const oy = isTouch ? h + 55 : h / 2; // lift above finger on touch
+        return { ox, oy };
+    }
+
+    function positionProxy(cx, cy) {
+        const isTouch = activePiece && ('ontouchstart' in window);
+        const bs = 26;
+        const { ox, oy } = proxyOffset(isTouch, bs);
+        dragProxy.style.left = (cx - ox) + 'px';
+        dragProxy.style.top = (cy - oy) + 'px';
+    }
+
+    // ── MOVE ──
+    function onMove(e) {
+        if (!activePiece) return;
+        e.preventDefault();
+        const pos = e.touches ? e.touches[0] : e;
+        positionProxy(pos.clientX, pos.clientY);
+        updatePreview(pos.clientX, pos.clientY);
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('touchmove', onMove, { passive: false });
+
+    function updatePreview(cx, cy) {
+        clearPreview();
+        const { row, col } = getGridPos(cx, cy);
+        if (row === null) { dropShadow.style.display = 'none'; return; }
+
+        const valid = canPlace(activePiece.shape, row, col);
+        activePiece.shape.forEach(([dr, dc]) => {
+            const idx = (row + dr) * SIZE + (col + dc);
+            if (idx >= 0 && idx < SIZE * SIZE) {
+                const cell = gridEl.querySelectorAll('.cell')[idx];
+                if (cell) cell.classList.add(valid ? 'preview' : 'invalid-preview');
+            }
+        });
+
+        // Position drop shadow on grid cells
+        if (valid && cellSize > 0) {
+            const cells = gridEl.querySelectorAll('.cell');
+            const topLeft = cells[row * SIZE + col];
+            if (topLeft) {
+                const r = topLeft.getBoundingClientRect();
+                dropShadow.style.display = 'grid';
+                dropShadow.style.left = r.left + 'px';
+                dropShadow.style.top = (r.top + 6) + 'px';
+                // size each shadow block to match cell
+                dropShadow.querySelectorAll('.block').forEach(b => {
+                    b.style.width = cellSize + 'px';
+                    b.style.height = cellSize + 'px';
+                });
+                const pRows = Math.max(...activePiece.shape.map(p => p[0])) + 1;
+                const pCols = Math.max(...activePiece.shape.map(p => p[1])) + 1;
+                dropShadow.style.gridTemplateRows = `repeat(${pRows}, ${cellSize}px)`;
+                dropShadow.style.gridTemplateColumns = `repeat(${pCols}, ${cellSize}px)`;
+                dropShadow.style.gap = '3px';
+            }
+        } else {
+            dropShadow.style.display = 'none';
+        }
+    }
+
+    // ── END ──
+    function onEnd(e) {
+        if (!activePiece) return;
+        const pos = e.changedTouches ? e.changedTouches[0] : e;
+        const { row, col } = getGridPos(pos.clientX, pos.clientY);
+
+        let placed = false;
+        if (row !== null && canPlace(activePiece.shape, row, col)) {
+            const cells = gridEl.querySelectorAll('.cell');
+            activePiece.shape.forEach(([dr, dc]) => {
+                const cell = cells[(row + dr) * SIZE + (col + dc)];
+                cell.style.backgroundColor = activePiece.col.fill;
+                cell.classList.add('filled');
+                cell.classList.remove('preview', 'invalid-preview');
+                board[row + dr][col + dc] = 1;
+            });
+            score += activePiece.shape.length;
+            checkLines();
+            activePiece.element.closest('.piece-slot').remove();
+            placed = true;
+        }
+
+        if (!placed) activePiece.element.style.opacity = '1';
+        activePiece = null;
+        dragProxy.style.display = 'none';
+        dropShadow.style.display = 'none';
+        clearPreview();
+
+        if (piecesEl.querySelectorAll('.piece-slot').length === 0) spawnPieces();
+        if (!canAnyMove()) triggerGameOver();
+        updateScore();
+    }
+
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchend', onEnd);
+
+    // ── GRID HIT TEST ──
+    // Compute which grid cell the pointer is over, accounting for piece anchor
+    function getGridPos(cx, cy) {
+        computeCellSize();
+        const cells = Array.from(gridEl.querySelectorAll('.cell'));
+        // Try the element directly under pointer
+        const el = document.elementFromPoint(cx, cy);
+        let idx = cells.indexOf(el);
+        if (idx !== -1) return { row: Math.floor(idx / SIZE), col: idx % SIZE };
+
+        // Fallback: hit test against grid bounding rect + cell size
+        const gridRect = gridEl.getBoundingClientRect();
+        const gap = 3;
+        const padding = 8;
+        const totalGaps = (SIZE - 1) * gap;
+        const cs = (gridRect.width - padding * 2 - totalGaps) / SIZE;
+
+        const relX = cx - gridRect.left - padding;
+        const relY = cy - gridRect.top - padding;
+
+        const c = Math.floor(relX / (cs + gap));
+        const r = Math.floor(relY / (cs + gap));
+        if (r >= 0 && r < SIZE && c >= 0 && c < SIZE) return { row: r, col: c };
+
+        return { row: null, col: null };
+    }
+
+    function canPlace(shape, r, c) {
+        return shape.every(([dr, dc]) => {
+            const nr = r + dr, nc = c + dc;
+            return nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === 0;
+        });
+    }
+
+    function clearPreview() {
+        gridEl.querySelectorAll('.cell').forEach(c => c.classList.remove('preview', 'invalid-preview'));
+    }
+
+    // ── LINES ──
+    function checkLines() {
+        const rs = [], cs = [];
+        for (let i = 0; i < SIZE; i++) {
+            if (board[i].every(v => v)) rs.push(i);
+            if (board.map(row => row[i]).every(v => v)) cs.push(i);
+        }
+        rs.forEach(r => {
+            board[r].fill(0);
+            for (let c = 0; c < SIZE; c++) animClear(r, c);
+            score += 80 + SIZE * 2;
+        });
+        cs.forEach(c => {
+            for (let r = 0; r < SIZE; r++) { board[r][c] = 0; animClear(r, c); }
+            score += 80 + SIZE * 2;
+        });
+        // Bonus for clearing multiple lines at once
+        if (rs.length + cs.length > 1) score += (rs.length + cs.length) * 30;
+    }
+
+    function animClear(r, c) {
+        const cells = gridEl.querySelectorAll('.cell');
+        const cell = cells[r * SIZE + c];
+        cell.classList.remove('filled');
+        cell.style.backgroundColor = '';
+        cell.classList.add('clear-anim');
+        cell.addEventListener('animationend', () => cell.classList.remove('clear-anim'), { once: true });
+    }
+
+    function canAnyMove() {
+        const pieces = Array.from(piecesEl.querySelectorAll('.piece'));
+        if (!pieces.length) return true;
+        return pieces.some(p => {
+            const shape = JSON.parse(p.dataset.shape);
+            for (let r = 0; r < SIZE; r++)
+                for (let c = 0; c < SIZE; c++)
+                    if (canPlace(shape, r, c)) return true;
+            return false;
+        });
+    }
+
+    function triggerGameOver() {
+        setTimeout(() => {
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('game-over-overlay').style.display = 'flex';
+        }, 700);
+    }
+
+    function retryGame() { init(); }
+</script>
+</body>
+</html>
